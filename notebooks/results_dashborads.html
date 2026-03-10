@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GPU RAG — Results Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js">
+// ETL Comparison Chart
+new Chart(document.getElementById("etlChart"), {
+  type: "bar",
+  data: {
+    labels: ["Load", "Clean", "Filter", "Chunk", "Dedup", "Stats", "Export"],
+    datasets: [
+      { label: "Pandas CPU (ms)", data: [21.5, 2332.4, 4965.7, 10948.0, 222.1, 6011.4, 2154.4], backgroundColor: "#DD8452", borderRadius: 4 },
+      { label: "CuPy GPU (ms)",   data: [106.9, 2143.6, 5904.8, 11185.1, 1405.7, 10077.1, 2434.0], backgroundColor: "#4C72B0", borderRadius: 4 }
+    ]
+  },
+  options: {
+    responsive: true,
+    scales: {
+      x: { ticks: { color: TICK }, grid: { color: GRID } },
+      y: { ticks: { color: TICK }, grid: { color: GRID }, title: { display: true, text: "ms", color: TICK } }
+    },
+    plugins: { legend: { labels: { color: "#ccc" } } }
+  }
+});
+
+// ETL Speedup Chart
+new Chart(document.getElementById("etlSpeedupChart"), {
+  type: "bar",
+  data: {
+    labels: ["Load", "Clean", "Filter", "Chunk", "Dedup", "Stats", "Export", "TOTAL"],
+    datasets: [{
+      label: "Speedup (Pandas/GPU)",
+      data: [0.20, 1.09, 0.84, 0.98, 0.16, 0.60, 0.89, 0.80],
+      backgroundColor: [0.20, 1.09, 0.84, 0.98, 0.16, 0.60, 0.89, 0.80].map(v => v >= 1 ? "#55A868" : "#E74C3C"),
+      borderRadius: 4
+    }]
+  },
+  options: {
+    responsive: true,
+    scales: {
+      x: { ticks: { color: TICK }, grid: { color: GRID } },
+      y: { ticks: { color: TICK }, grid: { color: GRID },
+           title: { display: true, text: "Speedup Factor", color: TICK } }
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.raw.toFixed(2)}x` } }
+    }
+  }
+});
+
+</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; padding: 24px; }
+  h1 { text-align: center; font-size: 1.8rem; margin-bottom: 6px; color: #fff; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 28px; font-size: 0.95rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1200px; margin: 0 auto; }
+  .card { background: #1a1d27; border-radius: 12px; padding: 24px; border: 1px solid #2a2d3a; }
+  .card.full { grid-column: 1 / -1; }
+  .card h3 { font-size: 1rem; color: #aaa; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em; }
+  canvas { max-height: 280px; }
+  .summary-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  .summary-table th { background: #2a2d3a; padding: 10px 14px; text-align: left; color: #888; font-weight: 600; }
+  .summary-table td { padding: 10px 14px; border-bottom: 1px solid #2a2d3a; }
+  .summary-table tr:last-child td { border-bottom: none; }
+  .best { color: #55A868; font-weight: bold; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.78rem; margin-left: 6px; }
+  .tag-green { background: #1a3a22; color: #55A868; }
+  .tag-orange { background: #3a2a1a; color: #DD8452; }
+  .finding { background: #1a2a1a; border-left: 3px solid #55A868; padding: 12px 16px; border-radius: 6px; margin-top: 12px; font-size: 0.9rem; line-height: 1.6; color: #ccc; }
+  .finding strong { color: #55A868; }
+  .findings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+</style>
+</head>
+<body>
+
+<h1>GPU-Accelerated RAG — Results Dashboard</h1>
+<p class="subtitle">TinyLlama 1.1B &nbsp;|&nbsp; TriviaQA 500 Questions &nbsp;|&nbsp; RTX 4050 6GB</p>
+
+<div class="grid">
+
+  <!-- Chart 1: Latency -->
+  <div class="card">
+    <h3>Avg Query Latency (ms) <span class="tag tag-green">lower is better</span></h3>
+    <canvas id="latencyChart"></canvas>
+  </div>
+
+  <!-- Chart 2: Throughput -->
+  <div class="card">
+    <h3>Throughput (queries/sec) <span class="tag tag-green">higher is better</span></h3>
+    <canvas id="throughputChart"></canvas>
+  </div>
+
+  <!-- Chart 3: Latency breakdown -->
+  <div class="card">
+    <h3>RAG Latency Breakdown by Component</h3>
+    <canvas id="breakdownChart"></canvas>
+  </div>
+
+  <!-- Chart 4: Memory -->
+  <div class="card">
+    <h3>Avg GPU Memory Usage (MB)</h3>
+    <canvas id="memoryChart"></canvas>
+  </div>
+
+  <!-- Chart 5: Reliability -->
+  <div class="card full">
+    <h3>Reliability Metrics</h3>
+    <canvas id="reliabilityChart" style="max-height:240px"></canvas>
+  </div>
+
+  <!-- Chart 6: Embedding speedup -->
+  <div class="card">
+    <h3>Embedding Latency: CPU vs GPU</h3>
+    <canvas id="embedChart"></canvas>
+  </div>
+
+  <!-- Summary table -->
+  <div class="card">
+    <h3>Full Metrics Summary</h3>
+    <table class="summary-table">
+      <thead>
+        <tr>
+          <th>System</th>
+          <th>Latency</th>
+          <th>Throughput</th>
+          <th>Hallucination</th>
+          <th>Consistency</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Vanilla LLM</td>
+          <td>2477 ms</td>
+          <td>0.404 q/s</td>
+          <td>57.6%</td>
+          <td>42.4%</td>
+        </tr>
+        <tr>
+          <td>CPU RAG</td>
+          <td>3372 ms</td>
+          <td>0.297 q/s</td>
+          <td>91.8%</td>
+          <td>8.2%</td>
+        </tr>
+        <tr>
+          <td><strong>GPU RAG</strong></td>
+          <td class="best">1763 ms ✓</td>
+          <td class="best">0.567 q/s ✓</td>
+          <td>91.8%</td>
+          <td>8.2%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+
+  <!-- ETL Benchmark -->
+  <div class="card full">
+    <h3>ETL Pipeline — Pandas (CPU) vs CuPy GPU &nbsp;<span class="tag tag-orange">Kaggle P100 · 191k document chunks</span></h3>
+    <canvas id="etlChart" style="max-height:260px"></canvas>
+  </div>
+
+  <div class="card full">
+    <h3>ETL Speedup Factor by Operation &nbsp;<span class="tag tag-green">&gt;1.0 = GPU faster</span></h3>
+    <canvas id="etlSpeedupChart" style="max-height:200px"></canvas>
+  </div>
+
+  <!-- Key findings -->
+  <div class="card full">
+    <h3>Key Findings</h3>
+    <div class="findings-grid">
+      <div class="finding"><strong>1.41x faster end-to-end</strong><br>GPU RAG (1763ms) vs Vanilla LLM (2477ms). Generation dominates latency in all systems.</div>
+      <div class="finding"><strong>60x faster embedding</strong><br>GPU embedding: 2ms vs CPU embedding: 120ms per query. Massive speedup on the retrieval side.</div>
+      <div class="finding"><strong>1.91x faster than CPU RAG</strong><br>GPU RAG beats CPU RAG significantly due to GPU embedding + batched inference.</div>
+      <div class="finding"><strong>Context distraction on TriviaQA</strong><br>RAG hallucination (91.8%) is higher than vanilla (57.6%) because retrieved Wikipedia passages contain related but not directly answering content — a known RAG failure mode.</div>
+      <div class="finding"><strong>ETL: Pandas beats GPU for text preprocessing</strong><br>Pandas (26.7s total) outperformed GPU pipeline (33.3s) on 191k string chunks. GPU transfer overhead dominates for text-heavy ETL — GPU suits large numerical dataframes, not NLP string ops. This is a key ADS insight.</div>
+      <div class="finding"><strong>GPU memory stays within limits</strong><br>Max observed: 5917 MB out of 6144 MB (96.3% utilisation). System remains stable throughout all 500 queries.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const VANILLA = "#4C72B0";
+const CPU_RAG = "#DD8452";
+const GPU_RAG = "#55A868";
+const GRID    = "rgba(255,255,255,0.07)";
+const TICK    = "#888";
+
+const baseOpts = (yLabel) => ({
+  responsive: true,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { ticks: { color: TICK }, grid: { color: GRID } },
+    y: { ticks: { color: TICK }, grid: { color: GRID }, title: { display: true, text: yLabel, color: TICK } }
+  }
+});
+
+// Chart 1 — Latency
+new Chart(document.getElementById("latencyChart"), {
+  type: "bar",
+  data: {
+    labels: ["Vanilla LLM", "CPU RAG", "GPU RAG"],
+    datasets: [{
+      data: [2477.4, 3372.3, 1762.9],
+      backgroundColor: [VANILLA, CPU_RAG, GPU_RAG],
+      borderRadius: 6
+    }]
+  },
+  options: {
+    ...baseOpts("ms"),
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.raw} ms` } }
+    }
+  }
+});
+
+// Chart 2 — Throughput
+new Chart(document.getElementById("throughputChart"), {
+  type: "bar",
+  data: {
+    labels: ["Vanilla LLM", "CPU RAG", "GPU RAG"],
+    datasets: [{
+      data: [0.404, 0.297, 0.567],
+      backgroundColor: [VANILLA, CPU_RAG, GPU_RAG],
+      borderRadius: 6
+    }]
+  },
+  options: {
+    ...baseOpts("q/s"),
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.raw} q/s` } }
+    }
+  }
+});
+
+// Chart 3 — Breakdown
+new Chart(document.getElementById("breakdownChart"), {
+  type: "bar",
+  data: {
+    labels: ["CPU RAG", "GPU RAG"],
+    datasets: [
+      { label: "Embedding", data: [120.0, 2.0], backgroundColor: "#4C72B0", borderRadius: 4 },
+      { label: "Retrieval",  data: [0.5, 0.3],  backgroundColor: "#9B59B6", borderRadius: 4 },
+      { label: "Generation", data: [3249.1, 1759.1], backgroundColor: "#DD8452", borderRadius: 4 }
+    ]
+  },
+  options: {
+    responsive: true,
+    scales: {
+      x: { stacked: true, ticks: { color: TICK }, grid: { color: GRID } },
+      y: { stacked: true, ticks: { color: TICK }, grid: { color: GRID }, title: { display: true, text: "ms", color: TICK } }
+    },
+    plugins: { legend: { labels: { color: "#ccc" } } }
+  }
+});
+
+// Chart 4 — Memory
+new Chart(document.getElementById("memoryChart"), {
+  type: "bar",
+  data: {
+    labels: ["Vanilla LLM", "CPU RAG", "GPU RAG"],
+    datasets: [{
+      data: [3422.6, 3901.9, 5917.1],
+      backgroundColor: [VANILLA, CPU_RAG, GPU_RAG],
+      borderRadius: 6
+    }]
+  },
+  options: {
+    ...baseOpts("MB"),
+    plugins: {
+      legend: { display: false },
+      annotation: {},
+      tooltip: { callbacks: { label: ctx => ` ${ctx.raw} MB` } }
+    },
+    scales: {
+      x: { ticks: { color: TICK }, grid: { color: GRID } },
+      y: { min: 0, max: 7000, ticks: { color: TICK }, grid: { color: GRID },
+           title: { display: true, text: "MB", color: TICK } }
+    }
+  }
+});
+
+// Chart 5 — Reliability
+new Chart(document.getElementById("reliabilityChart"), {
+  type: "bar",
+  data: {
+    labels: ["Vanilla LLM", "CPU RAG", "GPU RAG"],
+    datasets: [
+      { label: "Hallucination Rate", data: [0.576, 0.918, 0.918], backgroundColor: "#E74C3C", borderRadius: 4 },
+      { label: "Factual Consistency", data: [0.424, 0.082, 0.082], backgroundColor: "#55A868", borderRadius: 4 }
+    ]
+  },
+  options: {
+    responsive: true,
+    scales: {
+      x: { ticks: { color: TICK }, grid: { color: GRID } },
+      y: { min: 0, max: 1.1, ticks: { color: TICK, callback: v => (v*100).toFixed(0)+"%" }, grid: { color: GRID } }
+    },
+    plugins: {
+      legend: { labels: { color: "#ccc" } },
+      tooltip: { callbacks: { label: ctx => ` ${(ctx.raw*100).toFixed(1)}%` } }
+    }
+  }
+});
+
+// Chart 6 — Embedding
+new Chart(document.getElementById("embedChart"), {
+  type: "bar",
+  data: {
+    labels: ["CPU RAG", "GPU RAG"],
+    datasets: [{
+      data: [120.0, 2.0],
+      backgroundColor: [CPU_RAG, GPU_RAG],
+      borderRadius: 6
+    }]
+  },
+  options: {
+    ...baseOpts("ms"),
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.raw} ms` } }
+    }
+  }
+});
+
+// ETL Comparison Chart
+new Chart(document.getElementById("etlChart"), {
+  type: "bar",
+  data: {
+    labels: ["Load", "Clean", "Filter", "Chunk", "Dedup", "Stats", "Export"],
+    datasets: [
+      { label: "Pandas CPU (ms)", data: [21.5, 2332.4, 4965.7, 10948.0, 222.1, 6011.4, 2154.4], backgroundColor: "#DD8452", borderRadius: 4 },
+      { label: "CuPy GPU (ms)",   data: [106.9, 2143.6, 5904.8, 11185.1, 1405.7, 10077.1, 2434.0], backgroundColor: "#4C72B0", borderRadius: 4 }
+    ]
+  },
+  options: {
+    responsive: true,
+    scales: {
+      x: { ticks: { color: TICK }, grid: { color: GRID } },
+      y: { ticks: { color: TICK }, grid: { color: GRID }, title: { display: true, text: "ms", color: TICK } }
+    },
+    plugins: { legend: { labels: { color: "#ccc" } } }
+  }
+});
+
+// ETL Speedup Chart
+new Chart(document.getElementById("etlSpeedupChart"), {
+  type: "bar",
+  data: {
+    labels: ["Load", "Clean", "Filter", "Chunk", "Dedup", "Stats", "Export", "TOTAL"],
+    datasets: [{
+      label: "Speedup (Pandas/GPU)",
+      data: [0.20, 1.09, 0.84, 0.98, 0.16, 0.60, 0.89, 0.80],
+      backgroundColor: [0.20, 1.09, 0.84, 0.98, 0.16, 0.60, 0.89, 0.80].map(v => v >= 1 ? "#55A868" : "#E74C3C"),
+      borderRadius: 4
+    }]
+  },
+  options: {
+    responsive: true,
+    scales: {
+      x: { ticks: { color: TICK }, grid: { color: GRID } },
+      y: { ticks: { color: TICK }, grid: { color: GRID },
+           title: { display: true, text: "Speedup Factor", color: TICK } }
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.raw.toFixed(2)}x` } }
+    }
+  }
+});
+
+</script>
+</body>
+</html>
