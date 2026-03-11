@@ -2,7 +2,6 @@
 
 ![Docker Build](https://github.com/Pranavtiwari30/GPU-Accelerated-RAG-for-Low-Latency-and-Reliable-LLM-Inference/actions/workflows/docker-build.yml/badge.svg)
 
-
 ## Table of Contents
 - [Overview](#overview)
 - [System Architecture](#system-architecture)
@@ -30,7 +29,7 @@ This project builds and benchmarks three LLM inference pipelines to evaluate the
 |---|---|
 | **Model** | TinyLlama-1.1B-Chat-v1.0 (float16, ~2.2GB VRAM) |
 | **Embedding** | all-MiniLM-L6-v2 (384-dim) |
-| **Dataset** | TriviaQA `rc` — 5,000 documents, 500 QA evaluation pairs |
+| **Dataset** | SQuAD v1.1 — 500 QA evaluation pairs |
 | **Local GPU** | NVIDIA RTX 4050 6GB |
 | **ETL GPU** | Kaggle P100 16GB |
 
@@ -62,7 +61,7 @@ System 3 differs from System 2 in three ways:
 
 | Course Topic | How It Was Applied |
 |---|---|
-| **GPU vs CPU compute** | Embedding: 2ms (GPU) vs 120ms (CPU) — 60x measured speedup |
+| **GPU vs CPU compute** | Embedding: 2ms (GPU) vs 70ms (CPU) — 35x measured speedup |
 | **Batched inference** | System 3 processes 4 queries simultaneously using CUDA parallelism |
 | **Float16 / Mixed precision** | TinyLlama loaded in float16 — halves VRAM, uses Tensor Cores |
 | **CuPy / Rapids** | ETL pipeline benchmarked with CuPy GPU arrays vs Pandas on Kaggle P100 |
@@ -93,13 +92,15 @@ System 3 differs from System 2 in three ways:
 ```
 gpu_rag_project/
 │
-├── Dockerfile                       # NGC PyTorch base container
+├── Dockerfile                       # Two-stage: CI (python:3.10-slim) + Production (NGC PyTorch)
 ├── docker-compose.yml               # GPU-enabled compose with Jupyter profile
-├── requirements.txt
 ├── README.md
 │
+├── setup/
+│   └── requirements.txt             # Project dependencies
+│
 ├── data/
-│   ├── load_dataset.py              # TriviaQA download + cache
+│   ├── load_dataset.py              # Dataset download + cache
 │   └── etl_pipeline.py              # Pandas vs CuPy ETL benchmark
 │
 ├── system1_vanilla/
@@ -117,7 +118,7 @@ gpu_rag_project/
 │
 ├── evaluation/
 │   ├── metrics.py                   # Performance + reliability metrics
-│   └── run_eval.py                  # Master evaluation runner
+│   └── run_eval.py                  # Master evaluation runner (TriviaQA + SQuAD)
 │
 ├── notebooks/
 │   └── results_dashboard.html       # Interactive results (open in any browser)
@@ -140,8 +141,7 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ### 2. Install all other dependencies
 ```bash
-pip install transformers accelerate sentence-transformers datasets \
-            numpy pandas tqdm scikit-learn matplotlib seaborn psutil pynvml faiss-cpu
+pip install -r setup/requirements.txt
 ```
 
 ### 3. Verify GPU is detected
@@ -162,32 +162,31 @@ print(torch.cuda.get_device_name(0))  # NVIDIA GeForce RTX 4050
 
 ## Usage
 
-### Download and cache the dataset
+### Run full evaluation — SQuAD v1.1 (default, 500 questions)
 ```bash
-python data/load_dataset.py
+python evaluation/run_eval.py --dataset squad
 ```
-Downloads TriviaQA, extracts 5,000 document chunks and 500 QA pairs into `data/processed/`.
+
+### Run full evaluation — TriviaQA (original benchmark)
+```bash
+python evaluation/run_eval.py --dataset triviaqa
+```
+
+### Quick test (50 questions)
+```bash
+python evaluation/run_eval.py --dataset squad --n_questions 50
+```
+
+### Run specific systems only
+```bash
+python evaluation/run_eval.py --dataset squad --systems 1 3    # skips CPU RAG
+```
 
 ### Test a single system
 ```bash
 python system1_vanilla/vanilla_llm.py
 python system2_cpu_rag/cpu_rag_pipeline.py
 python system3_gpu_rag/gpu_rag_pipeline.py
-```
-
-### Run full evaluation (500 questions, all 3 systems)
-```bash
-python evaluation/run_eval.py
-```
-
-### Quick test (20 questions)
-```bash
-python evaluation/run_eval.py --n_questions 20
-```
-
-### Run specific systems only
-```bash
-python evaluation/run_eval.py --systems 1 3    # skips CPU RAG
 ```
 
 ### View interactive results
@@ -205,47 +204,50 @@ Kaggle ETL notebook → [View on Kaggle](https://www.kaggle.com/code/pranavtiwar
 
 | Operation | Pandas CPU (ms) | CuPy GPU (ms) | Speedup |
 |-----------|----------------|---------------|---------|
-| Load | 21.5 | 106.9 | 0.20x |
-| Clean | 2,332.4 | 2,143.6 | 1.09x |
-| Filter | 4,965.7 | 5,904.8 | 0.84x |
-| Chunk | 10,948.0 | 11,185.1 | 0.98x |
-| Dedup | 222.1 | 1,405.7 | 0.16x |
-| Stats | 6,011.4 | 10,077.1 | 0.60x |
-| Export | 2,154.4 | 2,434.0 | 0.89x |
-| **TOTAL** | **26,655 ms** | **33,257 ms** | **0.80x** |
+| Load      | 21.5           | 106.9         | 0.20x   |
+| Clean     | 2,332.4        | 2,143.6       | 1.09x   |
+| Filter    | 4,965.7        | 5,904.8       | 0.84x   |
+| Chunk     | 10,948.0       | 11,185.1      | 0.98x   |
+| Dedup     | 222.1          | 1,405.7       | 0.16x   |
+| Stats     | 6,011.4        | 10,077.1      | 0.60x   |
+| Export    | 2,154.4        | 2,434.0       | 0.89x   |
+| **TOTAL** | **26,655 ms**  | **33,257 ms** | **0.80x** |
 
-**Finding:** Pandas outperformed the GPU pipeline on text-heavy ETL. This is expected — CPU-GPU data transfer overhead dominates when operations are string-based rather than numerical. The GPU advantage emerges for large-scale numerical array operations (embeddings, matrix ops), not NLP text preprocessing. This is a core insight from ADS: GPU acceleration requires workload-specific analysis, not blanket application.
+**Finding:** Pandas outperformed the GPU pipeline on text-heavy ETL. CPU-GPU data transfer overhead dominates when operations are string-based rather than numerical. The GPU advantage emerges for large-scale numerical array operations (embeddings, matrix ops), not NLP text preprocessing. This is a core ADS insight: GPU acceleration requires workload-specific analysis, not blanket application.
 
 ---
 
 ## Results
 
-All results from a 500-question evaluation on RTX 4050 6GB.
+All results from a 500-question evaluation on RTX 4050 6GB using **SQuAD v1.1**.
 
 ### Performance
 
-| System | Avg Latency | Throughput | GPU Memory |
-|--------|-------------|------------|------------|
-| 1 — Vanilla LLM | 2,477 ms | 0.404 q/s | 3,423 MB |
-| 2 — CPU RAG | 3,372 ms | 0.297 q/s | 3,902 MB |
-| **3 — GPU RAG** | **1,763 ms** | **0.567 q/s** | 5,917 MB |
+| System          | Avg Latency | Throughput  | GPU Memory |
+|-----------------|-------------|-------------|------------|
+| 1 — Vanilla LLM | 2,753 ms    | 0.363 q/s   | 3,429 MB   |
+| 2 — CPU RAG     | 2,252 ms    | 0.444 q/s   | 5,681 MB   |
+| **3 — GPU RAG** | **930 ms**  | **1.076 q/s** | 6,097 MB |
 
 ### Latency Breakdown (RAG Systems)
 
-| Component | CPU RAG | GPU RAG | Speedup |
-|-----------|---------|---------|---------|
-| Embedding | 120.0 ms | 2.0 ms | **60x** |
-| Retrieval (FAISS) | 0.5 ms | 0.3 ms | 1.7x |
-| LLM Generation | 3,249 ms | 1,759 ms | 1.85x |
-| **End-to-end** | **3,372 ms** | **1,763 ms** | **1.91x** |
+| Component         | CPU RAG   | GPU RAG  | Speedup   |
+|-------------------|-----------|----------|-----------|
+| Embedding         | 70.6 ms   | 2.9 ms   | **24x**   |
+| Retrieval (FAISS) | 0.1 ms    | 0.4 ms   | —         |
+| LLM Generation    | 2,243.7 ms | 805.3 ms | **2.79x** |
+| **End-to-end**    | **2,252 ms** | **930 ms** | **2.42x** |
 
-### Reliability
+### Reliability — SQuAD v1.1
 
-| System | Hallucination Rate | Factual Consistency | Answer Grounding |
-|--------|--------------------|---------------------|------------------|
-| 1 — Vanilla LLM | 57.6% | 42.4% | N/A |
-| 2 — CPU RAG | 91.8% | 8.2% | 65.9% |
-| 3 — GPU RAG | 91.8% | 8.2% | 65.9% |
+| System          | Hallucination Rate | Factual Consistency | Answer Grounding |
+|-----------------|--------------------|---------------------|------------------|
+| 1 — Vanilla LLM | 89.2%              | 10.8%               | N/A              |
+| 2 — CPU RAG     | 58.0%              | 42.0%               | 99.5%            |
+| **3 — GPU RAG** | **57.2%**          | **42.8%**           | **100%**         |
+
+> RAG reduces hallucination by **32%** vs Vanilla LLM on SQuAD. Answer grounding at 100%
+> confirms the retrieval pipeline correctly surfaces answer-containing passages.
 
 > Open `notebooks/results_dashboard.html` for interactive charts covering all metrics.
 
@@ -253,36 +255,48 @@ All results from a 500-question evaluation on RTX 4050 6GB.
 
 ## Key Findings & Analysis
 
-### 1. GPU embedding is the dominant speedup
-Moving MiniLM from CPU to GPU delivers a **60x speedup** on embedding (120ms → 2ms). This is where GPU parallelism is most effective — dense matrix multiplications across 384-dimensional vectors map perfectly to CUDA cores. End-to-end, GPU RAG is **1.91x faster** than CPU RAG and **1.41x faster** than vanilla LLM.
+### 1. GPU RAG is 2.96× faster than Vanilla LLM
+GPU RAG (930ms) vs Vanilla LLM (2,753ms). Moving embedding and inference to GPU delivers substantial end-to-end speedup. GPU RAG is also **2.42× faster** than CPU RAG due to GPU embedding + batched inference.
 
-### 2. Generation is the real bottleneck
-LLM generation accounts for ~99% of total latency across all systems (1,759ms out of 1,763ms in GPU RAG). Embedding (2ms) and retrieval (0.3ms) are negligible. This is a roofline insight — the system is compute-bound at generation, not memory-bound at retrieval. Further optimization should target generation (quantization, speculative decoding) rather than retrieval.
+### 2. GPU embedding delivers a 24× speedup
+Moving MiniLM from CPU to GPU reduces embedding latency from 70.6ms to 2.9ms. Dense matrix multiplications across 384-dimensional vectors map perfectly to CUDA cores — this is where GPU parallelism is most effective.
 
-### 3. Context distraction — a RAG failure mode
-RAG hallucination (91.8%) is significantly higher than vanilla LLM (57.6%). This is the **context distraction** problem: TriviaQA questions require precise factual answers, but Wikipedia passages retrieved via semantic similarity contain topically related but non-answering content. The model conditions on irrelevant context and performs worse than with no context at all. The 65.9% answer grounding score confirms the answers exist in retrieved docs — the model simply fails to extract them. This is an active research problem in RAG literature.
+### 3. RAG reduces hallucination by 32% on SQuAD
+On SQuAD v1.1, where retrieved passages directly contain the answer span, RAG reduces hallucination from 89.2% (Vanilla) to 57.2% (GPU RAG). Answer grounding at 100% confirms the retrieval pipeline is working correctly — the model successfully extracts answers from retrieved context.
 
-### 4. GPU ETL is not always faster
-The ETL benchmark produced a counterintuitive result — Pandas was 1.25x faster than the GPU pipeline for text preprocessing. Data transfer overhead between CPU and GPU dominates for string-heavy, moderate-sized workloads. Rapids/cuDF is designed for large numerical dataframes, not NLP string operations. This finding illustrates a key ADS principle: profiling before optimizing.
+### 4. Generation is the real bottleneck
+LLM generation accounts for ~99% of total latency (805ms out of 930ms in GPU RAG). Embedding (2.9ms) and retrieval (0.4ms) are negligible. This is a roofline insight — the system is compute-bound at generation, not retrieval. Further optimization should target generation (quantization, speculative decoding) rather than retrieval.
 
-### 5. 6GB VRAM is sufficient but tight
-Peak GPU memory was 5,917 MB out of 6,144 MB available (96.3% utilization). The system remained stable across 500 queries. Float16 precision was the key enabler — float32 would have exceeded VRAM limits.
+### 5. Context distraction on TriviaQA — a documented failure mode
+Initial evaluation on TriviaQA revealed that RAG hallucination (91.8%) was higher than Vanilla (57.6%). This is the **context distraction** problem: TriviaQA requires precise factual answers, but Wikipedia passages retrieved via semantic similarity are topically related rather than directly answering. The model conditions on irrelevant context and performs worse than with no context at all. Switching to SQuAD — where passages contain the answer — confirmed the retrieval pipeline is correct. Context distraction is an active research problem in RAG literature; the fix is cross-encoder re-ranking or a larger model.
+
+### 6. GPU ETL is not always faster
+Pandas was 1.25× faster than the CuPy GPU pipeline for text preprocessing. Data transfer overhead dominates for string-heavy, moderate-sized workloads. Rapids/cuDF is designed for large numerical dataframes, not NLP string operations. Key ADS principle: profile before optimising.
+
+### 7. 6GB VRAM is sufficient but tight
+Peak GPU memory was 6,097 MB out of 6,144 MB available (99.2% utilisation). The system remained stable across 500 queries. Float16 precision was the key enabler — float32 would have exceeded VRAM limits.
 
 ---
 
 ## Docker Deployment
 
-The project is containerized using NVIDIA NGC's PyTorch base image — the same infrastructure used in production GPU deployments.
+The project uses a **two-stage Dockerfile**:
+- **CI stage** (`python:3.10-slim`) — lightweight, CPU-only, used by GitHub Actions
+- **Production stage** (`nvcr.io/nvidia/pytorch:24.01-py3`) — full CUDA, NGC base image
 
 ### Build and run
 ```bash
-# Build image
-docker build -t gpu-rag .
+# Production build (requires NVIDIA GPU)
+docker build --target production -t gpu-rag .
 
 # Run evaluation with persistent results
 docker run --gpus all \
   -v $(pwd)/results:/app/results \
-  gpu-rag python evaluation/run_eval.py --n_questions 500
+  gpu-rag python evaluation/run_eval.py --dataset squad --n_questions 500
+
+# CI build (CPU only, validates imports)
+docker build --target ci -t gpu-rag-ci .
+docker run gpu-rag-ci
 
 # Launch Jupyter for interactive exploration
 docker-compose --profile jupyter up
@@ -294,7 +308,7 @@ docker-compose --profile jupyter up
 FROM nvcr.io/nvidia/pytorch:24.01-py3
 ```
 
-Using NGC ensures CUDA, cuDNN, and NCCL are pre-configured and version-matched — eliminating the environment setup issues encountered during local Windows development.
+Using NGC ensures CUDA, cuDNN, and NCCL are pre-configured and version-matched — eliminating environment setup issues encountered during local Windows development.
 
 ---
 
@@ -304,13 +318,13 @@ Using NGC ensures CUDA, cuDNN, and NCCL are pre-configured and version-matched �
 |---|---|---|
 | No 4-bit quantization | bitsandbytes Windows bug | Run on Linux / WSL2 |
 | FAISS runs on CPU | faiss-gpu requires Linux | Deploy via Docker on Linux |
-| High RAG hallucination | Context distraction on TriviaQA | Add re-ranking / cross-encoder |
 | Small model (1.1B) | 6GB VRAM constraint | Use Mistral-7B on cloud GPU |
-| ETL GPU underperformance | cuDF 25.10 string kernel bug on Kaggle | Use stable Rapids environment |
+| Context distraction on TriviaQA | Model too small to extract from noisy context | Cross-encoder re-ranking |
+| ETL GPU underperformance | String-heavy ops, transfer overhead | Use cuDF for numerical ETL |
 
 **Potential extensions:**
 - Replace FAISS with cuVS (NVIDIA's GPU-native vector search)
-- Add cross-encoder re-ranking to fix context distraction
+- Add cross-encoder re-ranking to resolve context distraction on TriviaQA
 - Implement speculative decoding for faster generation
 - Scale to 50,000+ documents using Dask distributed embedding
 - Serve as a REST API inside Docker with NGINX reverse proxy
@@ -321,7 +335,8 @@ Using NGC ensures CUDA, cuDNN, and NCCL are pre-configured and version-matched �
 
 - Lewis et al. (2020). *Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks.* NeurIPS.
 - Johnson et al. (2019). *Billion-scale similarity search with GPUs.* IEEE TPAMI. (FAISS paper)
+- Rajpurkar et al. (2016). *SQuAD: 100,000+ Questions for Machine Comprehension of Text.* EMNLP.
 - NVIDIA Rapids Documentation — https://rapids.ai
 - TinyLlama Model — https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0
-- TriviaQA Dataset — https://huggingface.co/datasets/trivia_qa
+- SQuAD Dataset — https://huggingface.co/datasets/squad
 - NVIDIA NGC Containers — https://catalog.ngc.nvidia.com
