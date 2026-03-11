@@ -1,8 +1,11 @@
-# Core ML
+# Core ML (CPU fallback for CI, GPU used at runtime)
 torch>=2.1.0
 transformers>=4.37.0
 accelerate>=0.26.0
-bitsandbytes>=0.42.0
+
+# bitsandbytes — CUDA only, skip in CPU/CI environments
+# Install manually on GPU: pip install bitsandbytes>=0.42.0
+# bitsandbytes>=0.42.0
 
 # Embeddings
 sentence-transformers>=2.3.0
