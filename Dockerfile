@@ -18,33 +18,30 @@ ARG CI_BUILD=false
 
 # ── Stage 1: CI base (lightweight, used by GitHub Actions) ───────────────────
 FROM python:3.10-slim AS ci
-
 LABEL maintainer="ADS Project — GPU RAG"
-LABEL description="GPU-Accelerated RAG — CI build (CPU only)"
-
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y git curl && rm -rf /var/lib/apt/lists/*
 
 COPY setup/requirements.txt .
 
-# CPU-only deps for CI validation
+# Install CPU-only torch first, then pin compatible versions
 RUN pip install --no-cache-dir \
-    torch==2.1.0+cpu \
-    --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir \
-    --no-deps bitsandbytes || true && \
-    pip install --no-cache-dir \
-    transformers>=4.37.0 \
-    accelerate>=0.26.0 \
-    sentence-transformers>=2.3.0 \
-    faiss-cpu>=1.7.4 \
-    datasets>=2.16.0 \
-    numpy>=1.24.0 \
-    pandas>=2.0.0 \
-    tqdm>=4.66.0 \
-    scikit-learn>=1.3.0 \
-    psutil>=5.9.0
+    "torch==2.1.0+cpu" \
+    --index-url https://download.pytorch.org/whl/cpu
+
+RUN pip install --no-cache-dir \
+    "transformers==4.40.0" \
+    "accelerate==0.26.0" \
+    "sentence-transformers==2.7.0" \
+    "faiss-cpu>=1.7.4" \
+    "datasets>=2.16.0" \
+    "numpy>=1.24.0" \
+    "pandas>=2.0.0" \
+    "tqdm>=4.66.0" \
+    "scikit-learn>=1.3.0" \
+    "psutil>=5.9.0"
+# NOTE: bitsandbytes excluded — CUDA only, not needed for import validation
 
 COPY data/            ./data/
 COPY system1_vanilla/ ./system1_vanilla/
@@ -52,10 +49,8 @@ COPY system2_cpu_rag/ ./system2_cpu_rag/
 COPY system3_gpu_rag/ ./system3_gpu_rag/
 COPY evaluation/      ./evaluation/
 COPY notebooks/       ./notebooks/
-
 RUN mkdir -p /app/results
 
-# Validate imports only — no GPU needed
 CMD ["python", "-c", "\
 import torch; \
 from transformers import AutoTokenizer; \
