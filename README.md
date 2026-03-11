@@ -1,5 +1,7 @@
 # GPU-Accelerated RAG for Low-Latency and Reliable LLM Inference
 
+![Docker Build](https://github.com/Pranavtiwari30/GPU-Accelerated-RAG-for-Low-Latency-and-Reliable-LLM-Inference/actions/workflows/docker-build.yml/badge.svg)
+
 
 ## Table of Contents
 - [Overview](#overview)
@@ -197,7 +199,7 @@ Open `notebooks/results_dashboard.html` in any browser — no server or Python n
 
 A 7-stage document ETL pipeline was built in `data/etl_pipeline.py` and benchmarked comparing **Pandas (CPU)** against **CuPy GPU arrays** on a Kaggle P100 across 191,224 document chunks.
 
-Kaggle ETL notebook → https://www.kaggle.com/code/pranavtiwari30102003/etl-pipleline/edit
+Kaggle ETL notebook → [View on Kaggle](https://www.kaggle.com/code/pranavtiwari30102003/etl-pipleline)
 
 ### ETL Results — Kaggle P100, 191k chunks
 
