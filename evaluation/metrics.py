@@ -148,7 +148,10 @@ def answer_grounding_quality(results: List[Dict]) -> float:
             total_correct += 1
             # Check if any retrieved doc contains the ground truth
             gt_norm   = normalize_answer(r["ground_truth"])
-            docs_text = " ".join(normalize_answer(d) for d in r.get("retrieved_docs", []))
+            docs_text = " ".join(
+    normalize_answer(d["text"] if isinstance(d, dict) else d)
+    for d in r.get("retrieved_docs", [])
+)
             if gt_norm and gt_norm in docs_text:
                 grounded_correct += 1
 
