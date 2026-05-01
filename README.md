@@ -1,7 +1,5 @@
 # GPU-Accelerated RAG for Low-Latency and Reliable LLM Inference
 
-![Docker Build](https://github.com/Pranavtiwari30/GPU-Accelerated-RAG-for-Low-Latency-and-Reliable-LLM-Inference/actions/workflows/docker-build.yml/badge.svg)
-
 ## Table of Contents
 - [Overview](#overview)
 - [System Architecture](#system-architecture)
@@ -13,7 +11,6 @@
 - [ETL Pipeline — Rapids Benchmark](#etl-pipeline--rapids-benchmark)
 - [Results](#results)
 - [Key Findings & Analysis](#key-findings--analysis)
-- [Docker Deployment](#docker-deployment)
 - [Limitations & Future Work](#limitations--future-work)
 - [References](#references)
 
@@ -70,7 +67,6 @@ System 3 differs from System 2 in three ways:
 | **CuPy / Rapids** | ETL pipeline benchmarked with CuPy GPU arrays vs Pandas on Kaggle P100 |
 | **FAISS vector search** | Hardware-accelerated similarity search for document retrieval |
 | **Memory-bound vs compute-bound** | Roofline analysis — generation dominates, not retrieval |
-| **Docker / NGC containers** | Dockerfile built on `nvcr.io/nvidia/pytorch` NGC base image |
 | **ETL pipeline design** | 7-stage document preprocessing pipeline benchmarked at 191k chunks |
 
 ---
@@ -95,8 +91,6 @@ System 3 differs from System 2 in three ways:
 ```
 gpu_rag_project/
 │
-├── Dockerfile                       # Two-stage: CI (python:3.10-slim) + Production (NGC PyTorch)
-├── docker-compose.yml               # GPU-enabled compose with Jupyter profile
 ├── README.md
 │
 ├── setup/
@@ -265,39 +259,7 @@ Peak GPU memory was 6,097 MB out of 6,144 MB available (99.2% utilisation). The 
 ### 6. First Inference Warmup Penalty
 During initial testing, the first query executed on the GPU took significantly longer (often 5-10 seconds) compared to subsequent queries. This "First Inference Penalty" occurs because PyTorch must initialize the CUDA context, allocate memory for the computation graph, and load the GPU kernels on the first pass. To ensure accurate and fair benchmarking, a "warmup" inference step was implemented in the backend API startup sequence to pre-load the context, ensuring all reported metrics reflect true steady-state performance.
 
----
 
-## Docker Deployment
-
-The project uses a **two-stage Dockerfile**:
-- **CI stage** (`python:3.10-slim`) — lightweight, CPU-only, used by GitHub Actions
-- **Production stage** (`nvcr.io/nvidia/pytorch:24.01-py3`) — full CUDA, NGC base image
-
-### Build and run
-```bash
-# Production build (requires NVIDIA GPU)
-docker build --target production -t gpu-rag .
-
-# Run evaluation with persistent results
-docker run --gpus all \
-  -v $(pwd)/results:/app/results \
-  gpu-rag python backend/evaluation/run_eval.py --dataset triviaqa --n_questions 500
-
-# CI build (CPU only, validates imports)
-docker build --target ci -t gpu-rag-ci .
-docker run gpu-rag-ci
-
-# Launch Jupyter for interactive exploration
-docker-compose --profile jupyter up
-# Open: http://localhost:8888
-```
-
-### NGC base image
-```
-FROM nvcr.io/nvidia/pytorch:24.01-py3
-```
-
-Using NGC ensures CUDA, cuDNN, and NCCL are pre-configured and version-matched — eliminating environment setup issues encountered during local Windows development.
 
 ---
 
