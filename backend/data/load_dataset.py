@@ -113,8 +113,8 @@ def save_processed(documents, qa_pairs, output_dir=OUTPUT_DIR):
     with open(qa_path, "w", encoding="utf-8") as f:
         json.dump(qa_pairs, f, indent=2)
 
-    print(f"💾 Saved documents → {docs_path}")
-    print(f"💾 Saved QA pairs  → {qa_path}")
+    print(f"Saved documents -> {docs_path}")
+    print(f"Saved QA pairs  -> {qa_path}")
 
 
 def load_processed(output_dir=OUTPUT_DIR):
@@ -133,7 +133,7 @@ def load_processed(output_dir=OUTPUT_DIR):
     with open(qa_path, "r", encoding="utf-8") as f:
         qa_pairs = json.load(f)
 
-    print(f"✅ Loaded {len(documents)} documents and {len(qa_pairs)} QA pairs from cache")
+    print(f"Loaded {len(documents)} documents and {len(qa_pairs)} QA pairs from cache")
     return documents, qa_pairs
 
 

@@ -29,3 +29,7 @@ seaborn>=0.13.0
 # Memory profiling
 psutil>=5.9.0
 pynvml>=11.5.0
+
+# API Backend
+fastapi>=0.100.0
+uvicorn>=0.23.0

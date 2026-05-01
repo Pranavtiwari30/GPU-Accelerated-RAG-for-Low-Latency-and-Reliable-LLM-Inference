@@ -6,6 +6,11 @@ CPU-based embedding using all-MiniLM-L6-v2.
 Used by System 2 (CPU RAG pipeline).
 """
 
+import os
+# Prevent transformers (pulled in by sentence-transformers) from importing TensorFlow/Flax.
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+os.environ.setdefault("TRANSFORMERS_NO_FLAX", "1")
+
 import numpy as np
 from sentence_transformers import SentenceTransformer
 

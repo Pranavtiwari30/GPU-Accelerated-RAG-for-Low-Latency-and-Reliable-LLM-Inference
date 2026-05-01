@@ -4,6 +4,11 @@ system3_gpu_rag/embedder_gpu.py
 GPU-accelerated embedding using all-MiniLM-L6-v2.
 """
 
+import os
+# Prevent transformers (pulled in by sentence-transformers) from importing TensorFlow/Flax.
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+os.environ.setdefault("TRANSFORMERS_NO_FLAX", "1")
+
 import time
 import torch
 import numpy as np

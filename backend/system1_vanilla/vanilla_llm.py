@@ -3,6 +3,12 @@ system1_vanilla/vanilla_llm.py
 System 1 — Vanilla LLM Baseline
 """
 
+import os
+# Prevent transformers from importing TensorFlow/Flax if present in the environment.
+# This project uses PyTorch only; TF can break on some Windows+NumPy setups.
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+os.environ.setdefault("TRANSFORMERS_NO_FLAX", "1")
+
 import time
 import torch
 import psutil
@@ -24,7 +30,7 @@ def load_model():
 
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
-        dtype=torch.float16,
+        torch_dtype=torch.float16,
         device_map="auto",
         low_cpu_mem_usage=True,
     )
@@ -99,7 +105,7 @@ def run_pipeline(qa_pairs: list, tokenizer, model) -> list:
     print(f"\n🚀 Running System 1 (Vanilla LLM) on {len(qa_pairs)} questions...")
     for qa in tqdm(qa_pairs):
         result = generate_answer(qa["question"], tokenizer, model)
-        result["ground_truth"]   = qa["answer"]
+        result["ground_truth"] = qa.get("ground_truth") or qa.get("answer", "")
         result["answer_aliases"] = qa.get("answer_aliases", [])
         result["system"]         = "vanilla"
         results.append(result)

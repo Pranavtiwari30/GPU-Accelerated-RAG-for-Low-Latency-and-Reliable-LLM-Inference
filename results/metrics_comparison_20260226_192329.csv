@@ -1,4 +1,0 @@
-system,n_queries,avg_latency_ms,p50_latency_ms,p95_latency_ms,p99_latency_ms,throughput_qps,avg_gpu_memory_mb,avg_cpu_memory_mb,hallucination_rate,factual_consistency_score,answer_grounding_quality,avg_embed_latency_ms,avg_retrieval_latency_ms,avg_gen_latency_ms
-1_Vanilla_LLM,20,2515.6,2382.29,5107.86,5107.86,0.398,3420.0,4555.6,0.6,0.4,N/A,,,
-2_CPU_RAG,20,3226.27,3150.09,4267.08,4267.08,0.31,3901.8,2455.3,0.7,0.3,0.8333,76.41,0.74,3146.5
-3_GPU_RAG,20,1354.92,1106.84,1840.45,1840.45,0.738,5130.6,2471.6,0.7,0.3,0.8333,4.11,0.44,1348.85
